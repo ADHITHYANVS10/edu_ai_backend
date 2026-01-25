@@ -13,7 +13,7 @@ client = Groq(
     api_key=os.getenv("GROQ_API_KEY")
 )
 
-# ✅ Root route (for browser + health check)
+
 @app.route("/")
 def home():
     return "EDU AI Backend Running"
