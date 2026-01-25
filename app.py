@@ -6,15 +6,19 @@ from groq import Groq
 
 load_dotenv()
 
-
 app = Flask(__name__)
 CORS(app)
 
-
 client = Groq(
-     api_key=os.getenv("GROQ_API_KEY")
+    api_key=os.getenv("GROQ_API_KEY")
 )
 
+# ✅ Root route (for browser + health check)
+@app.route("/")
+def home():
+    return "EDU AI Backend Running"
+
+# ✅ Chat API
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
@@ -36,5 +40,6 @@ def chat():
         "reply": response.choices[0].message.content
     })
 
+# ⚠️ Local run only (Render ignores this)
 if __name__ == "__main__":
-    app.run()
+    app.run(host="0.0.0.0", port=5000, debug=True)
