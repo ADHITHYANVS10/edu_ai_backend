@@ -1,4 +1,5 @@
 import os
+import logging
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -6,19 +7,25 @@ from groq import Groq
 
 load_dotenv()
 
+# 🔹 Logging setup
+logging.basicConfig(level=logging.INFO)
+
 app = Flask(__name__)
 CORS(app)
+
+# 🔹 Log every request
+@app.before_request
+def log_request():
+    logging.info(f"{request.method} {request.path}")
 
 client = Groq(
     api_key=os.getenv("GROQ_API_KEY")
 )
 
-
 @app.route("/")
 def home():
     return "EDU AI Backend Running"
 
-# ✅ Chat API
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
@@ -39,7 +46,3 @@ def chat():
     return jsonify({
         "reply": response.choices[0].message.content
     })
-
-# ⚠️ Local run only (Render ignores this)
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
