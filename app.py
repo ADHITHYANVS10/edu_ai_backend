@@ -67,9 +67,10 @@ def upload_pdf():
 
     pdf_store[user_id] = text
 
+    
     return jsonify({
-        "message": "PDF uploaded and processed successfully",
-        "pages": len(reader.pages)
+    "message": "PDF uploaded and processed successfully",
+    "pages": len(reader.pages)
     })
 
 
