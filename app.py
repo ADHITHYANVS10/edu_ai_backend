@@ -86,7 +86,10 @@ def ask_pdf():
     if user_id not in pdf_store:
         return jsonify({"error": "No PDF uploaded for this user"}), 400
 
-    pdf_text = pdf_store[user_id][:12000]  # limit for safety
+    MAX_CHARS = 3500  # safe limit for Groq free tier
+
+    pdf_text = pdf_text_store[user_id][:MAX_CHARS]
+ 
 
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
