@@ -1,4 +1,5 @@
 import os
+import uuid
 import logging
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
@@ -6,110 +7,120 @@ from flask_cors import CORS
 from groq import Groq
 from PyPDF2 import PdfReader
 
+# --------------------------------------------------
+# Basic setup
+# --------------------------------------------------
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 CORS(app)
 
-logging.basicConfig(level=logging.INFO)
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# Store PDF text in RAM (per user)
-pdf_store = {}
+# --------------------------------------------------
+# In-memory PDF storage (per user)
+# --------------------------------------------------
+pdf_text_store = {}
 
-client = Groq(
-    api_key=os.getenv("GROQ_API_KEY")
-)
+MAX_CHARS = 3500  # safe limit for Groq free tier
 
-@app.before_request
-def log_request():
-    logging.info(f"{request.method} {request.path}")
+# --------------------------------------------------
+# Health check (IMPORTANT for Render)
+# --------------------------------------------------
+@app.route("/", methods=["GET"])
+def home():
+    return "EDU AI Backend Running 🚀", 200
 
-# ---------------------------
-# NORMAL CHAT (already works)
-# ---------------------------
-@app.route("/chat", methods=["POST"])
-def chat():
-    data = request.get_json()
-    user_message = data.get("message", "")
-
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": "You are a helpful educational AI assistant."},
-            {"role": "user", "content": user_message}
-        ]
-    )
-
-    return jsonify({
-        "reply": response.choices[0].message.content
-    })
-
-
-# ---------------------------
-# PDF UPLOAD
-# ---------------------------
+# --------------------------------------------------
+# Upload PDF
+# --------------------------------------------------
 @app.route("/upload-pdf", methods=["POST"])
 def upload_pdf():
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
 
-    user_id = request.form.get("user_id", "default_user")
-    pdf_file = request.files["file"]
+        file = request.files["file"]
 
-    reader = PdfReader(pdf_file)
-    text = ""
+        if file.filename == "":
+            return jsonify({"error": "Empty filename"}), 400
 
-    for page in reader.pages:
-        text += page.extract_text() or ""
+        reader = PdfReader(file)
+        text = ""
 
-    if not text.strip():
-        return jsonify({"error": "Could not extract text from PDF"}), 400
+        for page in reader.pages:
+            text += page.extract_text() or ""
 
-    pdf_store[user_id] = text
+        if not text.strip():
+            return jsonify({"error": "PDF has no extractable text"}), 400
 
-    
-    return jsonify({
-    "message": "PDF uploaded and processed successfully",
-    "pages": len(reader.pages)
-    })
+        text = text[:MAX_CHARS]
 
+        user_id = str(uuid.uuid4())
+        pdf_text_store[user_id] = text
 
-# ---------------------------
-# ASK QUESTIONS FROM PDF
-# ---------------------------
+        logging.info(f"PDF uploaded | pages={len(reader.pages)} | user_id={user_id}")
+
+        return jsonify({
+            "message": "PDF uploaded and processed successfully",
+            "pages": len(reader.pages),
+            "user_id": user_id
+        })
+
+    except Exception as e:
+        logging.error(f"Upload error: {str(e)}")
+        return jsonify({"error": "PDF processing failed"}), 500
+
+# --------------------------------------------------
+# Ask question from PDF
+# --------------------------------------------------
 @app.route("/ask-pdf", methods=["POST"])
 def ask_pdf():
-    data = request.get_json()
-    user_id = data.get("user_id", "default_user")
-    question = data.get("question", "")
+    try:
+        data = request.get_json()
 
-    if user_id not in pdf_store:
-        return jsonify({"error": "No PDF uploaded for this user"}), 400
+        user_id = data.get("user_id")
+        question = data.get("question")
 
-    MAX_CHARS = 3500  # safe limit for Groq free tier
+        if not user_id or not question:
+            return jsonify({"error": "user_id and question required"}), 400
 
-    pdf_text = pdf_text_store[user_id][:MAX_CHARS]
- 
+        if user_id not in pdf_text_store:
+            return jsonify({"error": "Invalid user_id"}), 400
 
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {
-                "role": "system",
-                "content": "Answer ONLY using the given PDF content."
-            },
-            {
-                "role": "user",
-                "content": f"PDF CONTENT:\n{pdf_text}\n\nQUESTION:\n{question}"
-            }
-        ]
-    )
+        context = pdf_text_store[user_id]
 
-    return jsonify({
-        "answer": response.choices[0].message.content
-    })
+        response = client.chat.completions.create(
+    model="llama-3.1-8b-instant",
+    messages=[
+        {
+            "role": "system",
+            "content": (
+                "You are an educational AI assistant. "
+                "If the answer is found in the document, answer using it. "
+                "If not found, clearly say it is not in the document and then give a general explanation."
+            )
+        },
+        {
+            "role": "user",
+            "content": f"Document:\n{context}\n\nQuestion:\n{question}"
+        }
+    ]
+)
 
 
-@app.route("/")
-def home():
-    return "EDU AI Backend Running ✅"
+        return jsonify({
+            "answer": response.choices[0].message.content
+        })
+
+    except Exception as e:
+        logging.error(f"Q&A error: {str(e)}")
+        return jsonify({"error": "Failed to answer question"}), 500
+
+# --------------------------------------------------
+# Run locally
+# --------------------------------------------------
+if __name__ == "__main__":
+    app.run(debug=True)
