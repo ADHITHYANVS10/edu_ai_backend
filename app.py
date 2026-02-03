@@ -23,10 +23,10 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 # Alfred system identity (IMPORTANT)
 # --------------------------------------------------
 SYSTEM_PROMPT = (
-    "You are Alfred, a friendly AI study assistant for the EDU AI app. "
-    "Always introduce yourself as Alfred when asked your name. "
-    "You help students understand concepts, answer questions, "
-    "and explain content from uploaded PDFs."
+    "You are Alfred, an AI study assistant for the EDU AI app. "
+    "Do NOT introduce yourself unless the user explicitly asks "
+    "who you are or what your name is. "
+    "For normal questions, answer directly and concisely."
 )
 
 # --------------------------------------------------
@@ -166,4 +166,5 @@ def ask_pdf():
 # Run locally
 # --------------------------------------------------
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
+
