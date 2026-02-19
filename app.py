@@ -30,14 +30,17 @@ SYSTEM_PROMPT = (
 )
 
 # --------------------------------------------------
-# In-memory PDF storage (per user)
+# In-memory storage
 # --------------------------------------------------
 pdf_text_store = {}
+
+# ✅ ADDED THIS ONLY (for continuation memory)
+chat_history_store = {}
 
 MAX_CHARS = 3500  # Safe for Groq free tier
 
 # --------------------------------------------------
-# Health check (Render needs this)
+# Health check
 # --------------------------------------------------
 @app.route("/", methods=["GET"])
 def home():
@@ -50,7 +53,7 @@ def test():
 
 
 # --------------------------------------------------
-# Normal chat (NO PDF)
+# Normal chat (UPDATED WITH CONTINUATION)
 # --------------------------------------------------
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -60,22 +63,50 @@ def chat():
         return jsonify({"error": "No message provided"}), 400
 
     user_message = data["message"]
+    user_id = data.get("user_id")
+
+    # If no user_id → create new session
+    if not user_id:
+        user_id = str(uuid.uuid4())
+        chat_history_store[user_id] = []
+
+    # Ensure session exists
+    if user_id not in chat_history_store:
+        chat_history_store[user_id] = []
+
+    # Add user message to memory
+    chat_history_store[user_id].append({
+        "role": "user",
+        "content": user_message
+    })
+
+    # Keep only last 10 messages (safe limit)
+    chat_history_store[user_id] = chat_history_store[user_id][-10:]
 
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message}
+            *chat_history_store[user_id]
         ]
     )
 
+    assistant_reply = response.choices[0].message.content
+
+    # Save assistant reply
+    chat_history_store[user_id].append({
+        "role": "assistant",
+        "content": assistant_reply
+    })
+
     return jsonify({
-        "reply": response.choices[0].message.content
+        "reply": assistant_reply,
+        "user_id": user_id  # return this to frontend
     })
 
 
 # --------------------------------------------------
-# Upload PDF
+# Upload PDF (UNCHANGED)
 # --------------------------------------------------
 @app.route("/upload-pdf", methods=["POST"])
 def upload_pdf():
@@ -116,7 +147,7 @@ def upload_pdf():
 
 
 # --------------------------------------------------
-# Ask question from PDF
+# Ask question from PDF (UNCHANGED)
 # --------------------------------------------------
 @app.route("/ask-pdf", methods=["POST"])
 def ask_pdf():
@@ -167,4 +198,3 @@ def ask_pdf():
 # --------------------------------------------------
 if __name__ == "__main__":
     app.run()
-
